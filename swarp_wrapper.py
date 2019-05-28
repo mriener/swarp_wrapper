@@ -6,7 +6,7 @@ import os
 import numpy as np
 
 from astropy.io import fits
-
+from tqdm import tqdm
 
 class Swarp(object):
     def __init__(self, listPathToCubes, settingsFile=None):
@@ -15,8 +15,6 @@ class Swarp(object):
 
         self.maxChannels = None
         self.listOfChannels = []
-
-        self.pathSlices = None
 
         self.filenameFinal = None
 
@@ -54,22 +52,20 @@ class Swarp(object):
             if start:
                 start = False
 
-                self.pathSwarp = os.path.join(
-                        self.dirname, 'swarp_files')
+                if self.pathSwarp is None:
+                    self.pathSwarp = os.path.join(self.dirname, 'swarp_files')
 
-                self.pathChannels = os.path.join(
-                        self.dirname, 'swarp_files', 'channels')
+                self.pathChannels = os.path.join(self.pathSwarp, 'channels')
                 if not os.path.exists(self.pathChannels):
                     os.makedirs(self.pathChannels)
 
-                self.pathSlices = os.path.join(
-                        self.dirname, 'swarp_files', 'slices')
+                self.pathSlices = os.path.join(self.pathSwarp, 'slices')
                 if not os.path.exists(self.pathSlices):
                     os.makedirs(self.pathSlices)
 
                 for channel in range(self.maxChannels):
                     self.listOfChannels.append(
-                            'channel_{:03d}'.format(channel))
+                            'channel_{:04d}'.format(channel))
 
             for channel in range(self.maxChannels):
                 if channel > (self.header['NAXIS3'] - 1):
@@ -81,7 +77,7 @@ class Swarp(object):
                     sliceData = self.data[channel, :, :]
                 sliceHeader = self.make_2d_header()
 
-                suffix = 'channel_{:03d}'.format(channel)
+                suffix = 'channel_{:04d}'.format(channel)
 
                 filename = '{}_{}.fits'.format(
                         self.filename, suffix)
@@ -120,9 +116,14 @@ class Swarp(object):
 
     def swarp_slices(self):
         ""
+        if self.verbose:
+            print("swarp slices...")
+
+        pbar = tqdm(total=len(self.listOfChannels))
         for channel in self.listOfChannels:
-            if self.verbose:
-                print("slice {}...".format(channel))
+            # if self.verbose:
+            #     print("slice {}...".format(channel))
+            pbar.update(1)
             nameListFiles = os.path.join(
                     self.pathChannels, '*{}*'.format(channel))
             filename = '{}.fits'.format(channel)
@@ -132,8 +133,9 @@ class Swarp(object):
             os.system('swarp {a} -c {b} -IMAGEOUT_NAME {c} -VERBOSE_TYPE QUIET'.format(
                     a=nameListFiles, b=self.settingsFile, c=filename))
             os.chdir(cwd)
-            if self.removeTemporaryFiles:
-                os.system('rm {}'.format(nameListFiles))
+            # if self.removeTemporaryFiles:
+            #     os.system('rm {}'.format(nameListFiles))
+        pbar.close()
 
     def assemble_cube(self):
         if self.verbose:
@@ -141,7 +143,9 @@ class Swarp(object):
         os.chdir(self.pathSlices)
 
         start = True
+        pbar = tqdm(total=len(self.listSlices))
         for idx, filename in enumerate(self.listSlices):
+            pbar.update(1)
             hdu = fits.open(filename)[0]
             data = hdu.data
             if start:
@@ -152,6 +156,7 @@ class Swarp(object):
                 header = self.correct_swarp_header(header)
 
             array[idx, :, :] = data
+        pbar.close()
 
         if self.filenameFinal is None:
             self.filenameFinal = 'swarp_final'
@@ -160,9 +165,17 @@ class Swarp(object):
                 self.pathSwarp, '{}.fits').format(self.filenameFinal)
         fits.writeto(pathToFile, array, header=header,
                      overwrite=self.overwrite)
+
+        os.chdir(self.pathSwarp)
+        pathLogfile = os.path.join(self.pathSlices, 'swarp.xml')
+        pathLogfileNew = os.path.join(self.pathSwarp, '{}.xml'.format(self.filenameFinal))
+        os.system('mv {} {}'.format(pathLogfile, pathLogfileNew))
+
         if self.removeTemporaryFiles:
-            for filename in self.listSlices:
-                os.system('rm {}'.format(filename))
+            os.system('rm -r {}'.format(self.pathSlices))
+            os.system('rm -r {}'.format(self.pathChannels))
+            # for filename in self.listSlices:
+            #     os.system('rm {}'.format(filename))
 
     def correct_swarp_header(self, header):
         header['NAXIS'] = 3
@@ -196,6 +209,11 @@ class Swarp(object):
             print("assembling final image...")
         os.chdir(self.pathImages)
         print(self.listOfImages)
+        if isinstance(self.listOfImages, list):
+            string = ''
+            for img in self.listOfImages:
+                string += img + ' '
+            self.listOfImages = string
         filename = os.path.join(self.pathImages, '{}.fits'.format(self.filenameFinal))
         print(filename)
         os.system('swarp {a} -c {b} -IMAGEOUT_NAME {c} -VERBOSE_TYPE QUIET'.format(
@@ -227,8 +245,12 @@ class Swarp(object):
         if self.pathSwarp is not None:
             pathToFile = os.path.join(
                     self.pathSwarp, '{}.fits'.format(self.filenameFinal))
+            if self.verbose:
+                print("saved '{}' in {}".format(self.filenameFinal, self.pathSwarp))
         else:
             pathToFile = os.path.join(
                     self.pathImages, '{}.fits'.format(self.filenameFinal))
+            if self.verbose:
+                print("saved '{}' in {}".format(self.filenameFinal, self.pathImages))
         fits.writeto(pathToFile, data, header=header,
                      overwrite=self.overwrite)
