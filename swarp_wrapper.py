@@ -12,7 +12,7 @@ from tqdm import tqdm
 class Swarp(object):
     def __init__(self):
         self.path_swarp = None
-        self.list_spectral_cubes = None
+        self.list_cubes = None
         self.list_images = None
         self.swarp_configuration_file = None
         self.filename_final = None
@@ -25,6 +25,7 @@ class Swarp(object):
         self.save_weighted_coaddition_map = True
         self.save_swarp_log = True
         self.restore_nans = True
+        self.correct_header = True
 
     def check_settings(self):
         if self.path_swarp is None:
@@ -33,11 +34,11 @@ class Swarp(object):
             os.makedirs(self.path_swarp)
         if self.swarp_configuration_file is None:
             raise Exception("Need to specify 'swarp_configuration_file', i.e. the path to the SWarp configuration file.")
-        if (self.list_spectral_cubes is None) and (self.list_images is None):
-            raise Exception("Need to supply either 'list_spectral_cubes' (= list of paths to spectral cubes) or 'list_images' (list of paths to images)")
+        if (self.list_cubes is None) and (self.list_images is None):
+            raise Exception("Need to supply either 'list_cubes' (= list of paths to spectral cubes) or 'list_images' (list of paths to images)")
 
     def clean_up(self):
-        if self.list_spectral_cubes is not None:
+        if self.list_cubes is not None:
             path_log_file = os.path.join(self.path_slices, 'swarp.xml')
             path_weighted_coadditon_map = os.path.join(
                 self.path_slices, 'coadd.weight.fits')
@@ -63,8 +64,8 @@ class Swarp(object):
             os.system('rm {}'.format(path_weighted_coadditon_map))
 
     def initialize_cube_mosaicking(self):
-        if self.list_spectral_cubes is None:
-            raise Exception("Need to supply either 'list_spectral_cubes' (= list of paths to spectral cubes)")
+        if self.list_cubes is None:
+            raise Exception("Need to supply either 'list_cubes' (= list of paths to spectral cubes)")
 
         self.path_channels = os.path.join(self.path_swarp, 'channels')
         if not os.path.exists(self.path_channels):
@@ -74,13 +75,14 @@ class Swarp(object):
         if not os.path.exists(self.path_slices):
             os.makedirs(self.path_slices)
 
+        self.list_of_channels = []
         for channel in range(self.max_channels):
             self.list_of_channels.append('channel_{:04d}'.format(channel))
 
-    def mosaick_cube(self):
+    def mosaick_cubes(self):
         self.check_settings()
-        self.initialize_cube_mosaicking()
         self.max_channels = self.check_channels()
+        self.initialize_cube_mosaicking()
         self.slice_cubes()
         self.swarp_slices()
         self.assemble_cube()
@@ -101,16 +103,18 @@ class Swarp(object):
             self.restore_nan_values()
 
     def slice_cubes(self):
-        self.list_of_channels = []
-
         # start = True
-        for path_to_cube in self.list_spectral_cubes:
+        total = len(self.list_cubes)
+        for i, path_to_cube in enumerate(self.list_cubes):
             self.dirname = os.path.dirname(path_to_cube)
             self.file = os.path.basename(path_to_cube)
             self.filename, self.file_extension = os.path.splitext(self.file)
 
+            end = '\r'
+            if i + 1 == total:
+                end = '\n'
             if self.verbose:
-                print("slicing cube {}...".format(self.filename))
+                print("slicing cube {}...".format(self.filename), end=end)
 
             hdu = fits.open(path_to_cube)[0]
             self.data = hdu.data
@@ -118,24 +122,6 @@ class Swarp(object):
 
             if len(self.data.shape) == 4:
                 self.correct_stokes()
-
-            # if start:
-            #     start = False
-            #
-            #     if self.path_swarp is None:
-            #         self.path_swarp = os.path.join(self.dirname, 'swarp_files')
-            #
-            #     self.path_channels = os.path.join(self.path_swarp, 'channels')
-            #     if not os.path.exists(self.path_channels):
-            #         os.makedirs(self.path_channels)
-            #
-            #     self.path_slices = os.path.join(self.path_swarp, 'slices')
-            #     if not os.path.exists(self.path_slices):
-            #         os.makedirs(self.path_slices)
-            #
-            #     for channel in range(self.max_channels):
-            #         self.list_of_channels.append(
-            #                 'channel_{:04d}'.format(channel))
 
             for channel in range(self.max_channels):
                 if channel > (self.header['NAXIS3'] - 1):
@@ -168,7 +154,7 @@ class Swarp(object):
 
     def check_channels(self):
         list_channels = []
-        for path_to_cube in self.list_spectral_cubes:
+        for path_to_cube in self.list_cubes:
             hdu = fits.open(path_to_cube)[0]
             header = hdu.header
             list_channels.append(header['NAXIS3'])
@@ -203,8 +189,6 @@ class Swarp(object):
             os.system('swarp {a} -c {b} -IMAGEOUT_NAME {c} -VERBOSE_TYPE QUIET'.format(
                     a=nameListFiles, b=self.swarp_configuration_file, c=filename))
             os.chdir(cwd)
-            # if self.remove_temporary_files:
-            #     os.system('rm {}'.format(nameListFiles))
         pbar.close()
 
     def assemble_cube(self):
@@ -231,6 +215,8 @@ class Swarp(object):
         if self.filename_final is None:
             self.filename_final = 'swarp_final'
 
+        os.chdir(self.path_swarp)
+
         path_to_file = os.path.join(
                 self.path_swarp, '{}.fits').format(self.filename_final)
         fits.writeto(path_to_file, array, header=header,
@@ -254,12 +240,9 @@ class Swarp(object):
         header.remove('CD2_1')
         header.remove('CD2_2')
 
-        header['NAXIS3'] = self.header['NAXIS3']
-        header['CTYPE3'] = self.header['CTYPE3']
-        # header['CUNIT3'] = 'm s-1'
-        header['CRVAL3'] = self.header['CRVAL3']
-        header['CRPIX3'] = self.header['CRPIX3']
-        header['CDELT3'] = self.header['CDELT3']
+        for keyword in ['NAXIS3', 'CTYPE3', 'CRVAL3', 'CRPIX3', 'CDELT3']:
+            if keyword in self.header.keys():
+                header[keyword] = self.header[keyword]
 
         return header
 
