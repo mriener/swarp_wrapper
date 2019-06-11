@@ -8,6 +8,8 @@ import numpy as np
 from astropy.io import fits
 from tqdm import tqdm
 
+from .fits_header_functions import remove_additional_axes, add_cdelt_keys_to_header
+
 
 class Swarp(object):
     def __init__(self):
@@ -26,6 +28,7 @@ class Swarp(object):
         self.save_swarp_log = True
         self.restore_nans = True
         self.correct_header = True
+        self.keep_cdelt_keys = True
 
     def check_settings(self):
         if self.path_swarp is None:
@@ -36,6 +39,9 @@ class Swarp(object):
             raise Exception("Need to specify 'swarp_configuration_file', i.e. the path to the SWarp configuration file.")
         if (self.list_cubes is None) and (self.list_images is None):
             raise Exception("Need to supply either 'list_cubes' (= list of paths to spectral cubes) or 'list_images' (list of paths to images)")
+        if self.filename_final is not None:
+            if self.filename_final.endswith('.fits'):
+                self.filename_final = self.filename_final[:-5]
 
     def clean_up(self):
         if self.list_cubes is not None:
@@ -121,7 +127,8 @@ class Swarp(object):
             self.header = hdu.header
 
             if len(self.data.shape) == 4:
-                self.correct_stokes()
+                self.data, self.header = remove_additional_axes(
+                    self.data, self.header)
 
             for channel in range(self.max_channels):
                 if channel > (self.header['NAXIS3'] - 1):
@@ -160,16 +167,6 @@ class Swarp(object):
             list_channels.append(header['NAXIS3'])
         return max(list_channels)
 
-    def correct_stokes(self):
-        if self.verbose:
-            print('correct for Stokes')
-        self.data = np.squeeze(self.data, axis=(0,))
-        self.header['NAXIS'] = 3
-        for keyword in ['NAXIS4', 'CRPIX4', 'CDELT4', 'CRVAL4',
-                        'CTYPE4', 'CROTA4']:
-            if keyword in self.header.keys():
-                self.header.remove(keyword)
-
     def swarp_slices(self):
         ""
         if self.verbose:
@@ -207,7 +204,8 @@ class Swarp(object):
                 header = hdu.header
                 array = self.initialize_array(header)
 
-                header = self.correct_swarp_header(header)
+                if self.keep_cdelt_keys:
+                    header = add_cdelt_keys_to_header(header)
 
             array[idx, :, :] = data
         pbar.close()
@@ -221,30 +219,6 @@ class Swarp(object):
                 self.path_swarp, '{}.fits').format(self.filename_final)
         fits.writeto(path_to_file, array, header=header,
                      overwrite=self.overwrite)
-
-    def correct_swarp_header(self, header):
-        header['NAXIS'] = 3
-        header['CTYPE1'] = header['CTYPE1']
-        header['CUNIT1'] = header['CUNIT1']
-        header['CRVAL1'] = header['CRVAL1']
-        header['CRPIX1'] = header['CRPIX1']
-        header['CDELT1'] = header['CD1_1']
-        header.remove('CD1_1')
-        header.remove('CD1_2')
-
-        header['CTYPE2'] = header['CTYPE2']
-        header['CUNIT2'] = header['CUNIT2']
-        header['CRVAL2'] = header['CRVAL2']
-        header['CRPIX2'] = header['CRPIX2']
-        header['CDELT2'] = header['CD2_2']
-        header.remove('CD2_1')
-        header.remove('CD2_2')
-
-        for keyword in ['NAXIS3', 'CTYPE3', 'CRVAL3', 'CRPIX3', 'CDELT3']:
-            if keyword in self.header.keys():
-                header[keyword] = self.header[keyword]
-
-        return header
 
     def assemble_image(self):
         if self.verbose:

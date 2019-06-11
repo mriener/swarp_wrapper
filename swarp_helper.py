@@ -40,3 +40,16 @@ def astrometry_info(filepath):
 
     print('CENTER {}, {}'.format(xcoord_center, ycoord_center))
     print('IMAGE_SIZE {}, {}'.format(size_x, size_y))
+
+
+def get_center_coordinates_for_swarp(header):
+    wcs = WCS(header)
+
+    x_wcs_min, y_wcs_min, z_wcs_min = wcs.wcs_pix2world(0, 0, 0, 0)
+    x_wcs_max, y_wcs_max, z_wcs_max = wcs.wcs_pix2world(
+        header['NAXIS1'] - 1, header['NAXIS2'] - 1, 0, 0)
+
+    x_wcs_ctr = (x_wcs_min + x_wcs_max) / 2
+    y_wcs_ctr = (y_wcs_min + y_wcs_max) / 2
+
+    return x_wcs_ctr, y_wcs_ctr
