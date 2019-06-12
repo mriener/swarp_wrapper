@@ -8,7 +8,7 @@ import numpy as np
 from astropy.io import fits
 from tqdm import tqdm
 
-from .fits_header_functions import remove_additional_axes, add_cdelt_keys_to_header
+from .fits_header_functions import remove_additional_axes, add_cdelt_keys_to_header, change_header
 
 
 class Swarp(object):
@@ -42,6 +42,8 @@ class Swarp(object):
         if self.filename_final is not None:
             if self.filename_final.endswith('.fits'):
                 self.filename_final = self.filename_final[:-5]
+
+        self.restore_cdelt_keys = False
 
     def clean_up(self):
         if self.list_cubes is not None:
@@ -126,6 +128,9 @@ class Swarp(object):
             self.data = hdu.data
             self.header = hdu.header
 
+            if self.keep_cdelt_keys and 'CDELT1' in self.header.keys():
+                self.restore_cdelt_keys = True
+
             if len(self.data.shape) == 4:
                 self.data, self.header = remove_additional_axes(
                     self.data, self.header)
@@ -138,7 +143,7 @@ class Swarp(object):
                     slice_data[:] = np.NAN
                 else:
                     slice_data = self.data[channel, :, :]
-                slice_header = self.make_2d_header()
+                slice_header = change_header(self.header.copy())
 
                 suffix = 'channel_{:04d}'.format(channel)
 
@@ -148,16 +153,6 @@ class Swarp(object):
 
                 fits.writeto(path_to_file, slice_data, header=slice_header,
                              overwrite=self.overwrite)
-
-    def make_2d_header(self):
-        header = self.header.copy()
-
-        header['NAXIS'] = 2
-        for keyword in ['NAXIS3', 'CRPIX3', 'CDELT3', 'CRVAL3',
-                        'CTYPE3', 'CROTA3']:
-            if keyword in header.keys():
-                header.remove(keyword)
-        return header
 
     def check_channels(self):
         list_channels = []
@@ -204,7 +199,7 @@ class Swarp(object):
                 header = hdu.header
                 array = self.initialize_array(header)
 
-                if self.keep_cdelt_keys:
+                if self.restore_cdelt_keys:
                     header = add_cdelt_keys_to_header(header)
 
             array[idx, :, :] = data

@@ -9,6 +9,69 @@ from astropy.wcs import WCS
 from datetime import datetime
 
 
+def change_header(header, format='pp', keep_axis='1', comments=[], dct_keys={}):
+    """Change the FITS header of a file.
+
+    Parameters
+    ----------
+    header : astropy.io.fits.Header
+        Header of the FITS array.
+    format : 'pp' or 'pv'
+        Describes the format of the resulting 2D header: 'pp' for position-position data and 'pv' for position-velocity data.
+    keep_axis : '1' or '2'
+        If format is set to 'pv', this specifies which spatial axis is kept: '1' - NAXIS1 stays and NAXIS2 gets removed, '2' - NAXIS2 stays and NAXIS1 gets removed
+    comments : list
+        Comments that are added to the FITS header under the COMMENT keyword.
+    dct_keys : dict
+        Dictionary that specifies which keywords and corresponding values should be added to the FITS header.
+
+    Returns
+    -------
+    astropy.io.fits.Header
+        Updated FITS header.
+
+    """
+    prihdr = fits.Header()
+    for key in ['SIMPLE', 'BITPIX']:
+        prihdr[key] = header[key]
+
+    prihdr['NAXIS'] = 2
+    prihdr['WCSAXES'] = 2
+
+    keys = ['NAXIS', 'CRPIX', 'CRVAL', 'CDELT', 'CUNIT', 'CROTA']
+
+    if format == 'pv':
+        keep_axes = [keep_axis, '3']
+        prihdr['CTYPE1'] = '        '
+        prihdr['CTYPE2'] = '        '
+    else:
+        keep_axes = ['1', '2']
+        keys += ['CTYPE']
+
+    for key in keys:
+        if key + keep_axes[0] in header.keys():
+            prihdr[key + '1'] = header[key + keep_axes[0]]
+        if key + keep_axes[1] in header.keys():
+            prihdr[key + '2'] = header[key + keep_axes[1]]
+
+    for key_new, axis in zip(['CDELT1', 'CDELT2'], keep_axes):
+        key = 'CD{a}_{a}'.format(a=axis)
+        if key in header.keys():
+            prihdr[key_new] = header[key]
+
+    prihdr['AUTHOR'] = getpass.getuser()
+    prihdr['ORIGIN'] = socket.gethostname()
+    prihdr['DATE'] = (datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S'), '(GMT)')
+
+    for comment in comments:
+        prihdr['COMMENT'] = comment
+
+    for key, val in dct_keys.items():
+        prihdr[key] = val
+
+    return prihdr
+
+
 def update_header(header, comments=[], remove_keywords=[], update_keywords={},
                   remove_old_comments=False, write_meta=True):
     """Update FITS header.
