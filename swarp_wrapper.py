@@ -8,7 +8,7 @@ import numpy as np
 from astropy.io import fits
 from tqdm import tqdm
 
-from .fits_header_functions import remove_additional_axes, add_cdelt_keys_to_header, change_header
+from .fits_header_functions import remove_additional_axes, add_cdelt_keys_to_header, change_header, add_keywords_spectral_axis
 
 
 class Swarp(object):
@@ -125,25 +125,28 @@ class Swarp(object):
                 print("slicing cube {}...".format(self.filename), end=end)
 
             hdu = fits.open(path_to_cube)[0]
-            self.data = hdu.data
-            self.header = hdu.header
+            data = hdu.data
+            header = hdu.header
 
-            if self.keep_cdelt_keys and 'CDELT1' in self.header.keys():
+            if self.keep_cdelt_keys and 'CDELT1' in header.keys():
                 self.restore_cdelt_keys = True
 
-            if len(self.data.shape) == 4:
-                self.data, self.header = remove_additional_axes(
-                    self.data, self.header)
+            if len(data.shape) == 4:
+                data, header = remove_additional_axes(
+                    data, header)
+
+            if i == 0:
+                self.header = header.copy()
 
             for channel in range(self.max_channels):
-                if channel > (self.header['NAXIS3'] - 1):
+                if channel > (header['NAXIS3'] - 1):
                     # create 2D array with nan values
                     slice_data = np.empty(
-                            (self.header['NAXIS2'], self.header['NAXIS1']))
+                            (header['NAXIS2'], header['NAXIS1']))
                     slice_data[:] = np.NAN
                 else:
-                    slice_data = self.data[channel, :, :]
-                slice_header = change_header(self.header.copy())
+                    slice_data = data[channel, :, :]
+                slice_header = change_header(header.copy())
 
                 suffix = 'channel_{:04d}'.format(channel)
 
@@ -197,10 +200,11 @@ class Swarp(object):
             if start:
                 start = False
                 header = hdu.header
-                array = self.initialize_array(header)
-
+                header = add_keywords_spectral_axis(header, self.header)
                 if self.restore_cdelt_keys:
                     header = add_cdelt_keys_to_header(header)
+
+                array = self.initialize_array(header)
 
             array[idx, :, :] = data
         pbar.close()

@@ -183,3 +183,10 @@ def add_cdelt_keys_to_header(header):
     header.remove('CD2_2')
 
     return header
+
+
+def add_keywords_spectral_axis(header_new, header_old):
+    for keyword in ['CTYPE3', 'CRVAL3', 'CRPIX3', 'CDELT3', 'CUNIT3', 'CROTA3']:
+        if keyword in header_old.keys():
+            header_new[keyword] = header_old[keyword]
+    return header_new
