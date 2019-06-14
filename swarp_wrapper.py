@@ -6,9 +6,10 @@ import os
 import numpy as np
 
 from astropy.io import fits
+from pprint import pprint
 from tqdm import tqdm
 
-from .fits_header_functions import remove_additional_axes, add_cdelt_keys_to_header, change_header, add_keywords_spectral_axis
+from .fits_header_functions import remove_additional_axes, change_header, restore_header_keys
 
 
 class Swarp(object):
@@ -27,8 +28,14 @@ class Swarp(object):
         self.save_weighted_coaddition_map = True
         self.save_swarp_log = True
         self.restore_nans = True
-        self.correct_header = True
-        self.keep_cdelt_keys = True
+        # self.correct_header = True
+        # self.keep_cdelt_keys = True
+        self.restore_keys = True
+
+    def say(self, message):
+        """Diagnostic messages."""
+        if self.verbose:
+            print(message)
 
     def check_settings(self):
         if self.path_swarp is None:
@@ -100,15 +107,13 @@ class Swarp(object):
             os.system('rm -r {}'.format(self.path_slices))
             os.system('rm -r {}'.format(self.path_channels))
 
-        if self.restore_nans:
-            self.restore_nan_values()
+        self.restore_values()
 
     def mosaick_image(self):
         self.check_settings()
         self.assemble_image()
         self.clean_up()
-        if self.restore_nans:
-            self.restore_nan_values()
+        self.restore_values()
 
     def slice_cubes(self):
         # start = True
@@ -124,12 +129,8 @@ class Swarp(object):
             if self.verbose:
                 print("slicing cube {}...".format(self.filename), end=end)
 
-            hdu = fits.open(path_to_cube)[0]
-            data = hdu.data
-            header = hdu.header
-
-            if self.keep_cdelt_keys and 'CDELT1' in header.keys():
-                self.restore_cdelt_keys = True
+            data = fits.getdata(path_to_cube)
+            header = fits.getheader(path_to_cube)
 
             if len(data.shape) == 4:
                 data, header = remove_additional_axes(
@@ -166,9 +167,7 @@ class Swarp(object):
         return max(list_channels)
 
     def swarp_slices(self):
-        ""
-        if self.verbose:
-            print("swarp slices...")
+        self.say("swarp slices...")
 
         self.list_slices = []
 
@@ -187,23 +186,18 @@ class Swarp(object):
         pbar.close()
 
     def assemble_cube(self):
-        if self.verbose:
-            print("assembling final cube...")
+        self.say("assembling final cube...")
         os.chdir(self.path_slices)
 
         start = True
         pbar = tqdm(total=len(self.list_slices))
         for idx, filename in enumerate(self.list_slices):
             pbar.update(1)
-            hdu = fits.open(filename)[0]
-            data = hdu.data
+            data = fits.getdata(filename)
+            header = fits.getheader(filename)
             if start:
                 start = False
-                header = hdu.header
-                header = add_keywords_spectral_axis(header, self.header)
-                if self.restore_cdelt_keys:
-                    header = add_cdelt_keys_to_header(header)
-
+                header = restore_header_keys(header, self.header)
                 array = self.initialize_array(header)
 
             array[idx, :, :] = data
@@ -220,11 +214,12 @@ class Swarp(object):
                      overwrite=self.overwrite)
 
     def assemble_image(self):
+        self.say("list of input images:")
         if self.verbose:
-            print("assembling final image...")
+            pprint(self.list_images)
+        self.say("assembling final image...")
+
         os.chdir(self.path_swarp)
-        if self.verbose:
-            print(self.list_images)
         if isinstance(self.list_images, list):
             string = ''
             for img in self.list_images:
@@ -232,8 +227,7 @@ class Swarp(object):
             self.list_images = string
         filename = os.path.join(
             self.path_swarp, '{}.fits'.format(self.filename_final))
-        if self.verbose:
-            print(filename)
+
         os.system(
             'swarp {a} -c {b} -IMAGEOUT_NAME {c} -VERBOSE_TYPE QUIET'.format(
                 a=self.list_images, b=self.swarp_configuration_file, c=filename))
@@ -247,21 +241,24 @@ class Swarp(object):
 
         return array
 
-    def restore_nan_values(self):
-        if self.verbose:
-            print("restoring nan values...")
+    def restore_values(self):
         os.chdir(self.path_swarp)
 
-        hdu = fits.open('{}.fits'.format(self.filename_final))[0]
-        data = hdu.data
-        header = hdu.header
+        data = fits.getdata(self.filename_final + '.fits')
+        header = fits.getheader(self.filename_final + '.fits')
 
-        data[data < -1e5] = np.nan
+        if self.restore_nans:
+            self.say("restoring NaN values...")
+            data[data < -1e5] = np.nan
+
+        if self.restore_keys:
+            self.say("restoring FITS header keys...")
+            header = restore_header_keys(header, self.header)
 
         path_to_file = os.path.join(
                 self.path_swarp, '{}.fits'.format(self.filename_final))
-        if self.verbose:
-            print("saved '{}' in {}".format(self.filename_final, self.path_swarp))
+        self.say("saved '{}' in {}".format(
+            self.filename_final, self.path_swarp))
 
         fits.writeto(path_to_file, data, header=header,
                      overwrite=self.overwrite)

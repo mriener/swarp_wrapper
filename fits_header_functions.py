@@ -173,20 +173,18 @@ def remove_additional_axes(data, header, max_dim=3,
     return data, header
 
 
-def add_cdelt_keys_to_header(header):
-    header['CDELT1'] = header['CD1_1']
-    header.remove('CD1_1')
-    header.remove('CD1_2')
+def restore_header_keys(header_new, header_old):
+    diff = fits.HeaderDiff(header_old, header_new)
+    diff_keys = diff.diff_keywords[0]
+    for key in diff_keys:
+        header_new[key] = header_old[key]
+        header_new.comments[key] = header_old.comments[key]
 
-    header['CDELT2'] = header['CD2_2']
-    header.remove('CD2_1')
-    header.remove('CD2_2')
+    if 'CDELT1' in header_old.keys() and 'CD1_1' in header_new.keys():
+        header_new.remove('CD1_1')
+        header_new.remove('CD1_2')
+    if 'CDELT2' in header_old.keys() and 'CD2_2' in header_new.keys():
+        header_new.remove('CD2_1')
+        header_new.remove('CD2_2')
 
-    return header
-
-
-def add_keywords_spectral_axis(header_new, header_old):
-    for keyword in ['CTYPE3', 'CRVAL3', 'CRPIX3', 'CDELT3', 'CUNIT3', 'CROTA3']:
-        if keyword in header_old.keys():
-            header_new[keyword] = header_old[keyword]
     return header_new
