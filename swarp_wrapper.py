@@ -9,7 +9,7 @@ from astropy.io import fits
 from pprint import pprint
 from tqdm import tqdm
 
-from .fits_header_functions import remove_additional_axes, change_header, restore_header_keys
+from .fits_header_functions import remove_additional_axes, change_header, restore_header_keys, transform_header_from_crota_to_pc
 
 
 class Swarp(object):
@@ -28,9 +28,9 @@ class Swarp(object):
         self.save_weighted_coaddition_map = True
         self.save_swarp_log = True
         self.restore_nans = True
-        # self.correct_header = True
-        # self.keep_cdelt_keys = True
         self.restore_keys = True
+        self.convert_zeros_to_nans = False
+        self.list_of_keys_to_remove = []
 
     def say(self, message):
         """Diagnostic messages."""
@@ -94,7 +94,7 @@ class Swarp(object):
         for channel in range(self.max_channels):
             self.list_of_channels.append('channel_{:04d}'.format(channel))
 
-    def mosaick_cubes(self):
+    def mosaic_cubes(self):
         self.check_settings()
         self.max_channels = self.check_channels()
         self.initialize_cube_mosaicking()
@@ -109,7 +109,7 @@ class Swarp(object):
 
         self.restore_values()
 
-    def mosaick_image(self):
+    def mosaic_images(self):
         self.check_settings()
         self.assemble_image()
         self.clean_up()
@@ -197,7 +197,8 @@ class Swarp(object):
             header = fits.getheader(filename)
             if start:
                 start = False
-                header = restore_header_keys(header, self.header)
+                header = restore_header_keys(
+                    header, self.header, remove_keys=self.list_of_keys_to_remove)
                 array = self.initialize_array(header)
 
             array[idx, :, :] = data
@@ -214,10 +215,12 @@ class Swarp(object):
                      overwrite=self.overwrite)
 
     def assemble_image(self):
-        self.say("list of input images:")
+        self.say("list of {} input images:".format(len(self.list_images)))
         if self.verbose:
             pprint(self.list_images)
         self.say("assembling final image...")
+
+        self.header = fits.getheader(self.list_images[0])
 
         os.chdir(self.path_swarp)
         if isinstance(self.list_images, list):
@@ -251,9 +254,16 @@ class Swarp(object):
             self.say("restoring NaN values...")
             data[data < -1e5] = np.nan
 
+        if self.convert_zeros_to_nans:
+            self.say("converting zero values to NaNs...")
+            data[data == 0] = np.nan
+
         if self.restore_keys:
             self.say("restoring FITS header keys...")
-            header = restore_header_keys(header, self.header)
+            header = restore_header_keys(
+                header, self.header, remove_keys=self.list_of_keys_to_remove)
+
+        header = transform_header_from_crota_to_pc(header)
 
         path_to_file = os.path.join(
                 self.path_swarp, '{}.fits'.format(self.filename_final))

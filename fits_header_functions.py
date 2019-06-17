@@ -173,7 +173,7 @@ def remove_additional_axes(data, header, max_dim=3,
     return data, header
 
 
-def restore_header_keys(header_new, header_old):
+def restore_header_keys(header_new, header_old, remove_keys=[]):
     diff = fits.HeaderDiff(header_old, header_new)
     diff_keys = diff.diff_keywords[0]
     for key in diff_keys:
@@ -187,4 +187,34 @@ def restore_header_keys(header_new, header_old):
         header_new.remove('CD2_1')
         header_new.remove('CD2_2')
 
+    for key in remove_keys:
+        if key in header_new.keys():
+            header_new.remove(key)
+
     return header_new
+
+
+def transform_header_from_crota_to_pc(header):
+    """Replace CROTA* keywords with PC*_* keywords."""
+    cdelt1 = header['CDELT1']
+    cdelt2 = header['CDELT2']
+
+    if 'CROTA1' in header.keys():
+        crota = np.radians(header['CROTA1'])
+        if crota != 0:
+            warnings.warn(
+                "Replacing 'CROTA*' with 'PC*_*' keywords in FITS header.")
+            header['PC1_1'] = np.cos(crota)
+            header['PC1_2'] = -(cdelt2 / cdelt1) * np.sin(crota)
+            header['PC2_1'] = (cdelt1 / cdelt1) * np.sin(crota)
+            header['PC2_2'] = np.cos(crota)
+        else:
+            warnings.warn("'CROTA*' keywords with value 0. present in FITS header.")
+
+    warnings.warn("Removing 'CROTA*' keywords from FITS header.")
+
+    for key in list(header.keys()):
+        if key.startswith('CROTA'):
+            header.remove(key)
+
+    return header
