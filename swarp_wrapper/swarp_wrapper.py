@@ -116,7 +116,6 @@ class Swarp(object):
         self.restore_values()
 
     def slice_cubes(self):
-        # start = True
         total = len(self.list_cubes)
         for i, path_to_cube in enumerate(self.list_cubes):
             self.dirname = os.path.dirname(path_to_cube)
@@ -161,8 +160,7 @@ class Swarp(object):
     def check_channels(self):
         list_channels = []
         for path_to_cube in self.list_cubes:
-            hdu = fits.open(path_to_cube)[0]
-            header = hdu.header
+            header = fits.getheader(path_to_cube)
             list_channels.append(header['NAXIS3'])
         return max(list_channels)
 

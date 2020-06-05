@@ -36,7 +36,8 @@ def astrometry_info(filepath):
     xpix_center = zero_cols_start + (size_x - 1) / 2
     ypix_center = zero_rows_start + (size_y - 1) / 2
 
-    xcoord_center, ycoord_center = wcs.all_pix2world(xpix_center, ypix_center, 0)
+    xcoord_center, ycoord_center = wcs.all_pix2world(
+        xpix_center, ypix_center, 0)
 
     print('CENTER {}, {}'.format(xcoord_center, ycoord_center))
     print('IMAGE_SIZE {}, {}'.format(size_x, size_y))
