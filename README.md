@@ -73,6 +73,6 @@ The `example` directory contains two example scripts on how to mosaic FITS data 
 
 If you should find that the ``swarp_wrapper`` does not perform as intended for your dataset or if you should come across bugs or have suggestions for improvement, please get into contact with us or open a new Issue or Pull request.
 
-## Contributing to GaussPy+
+## Contributing to swarp_wrapper
 
 To contribute to the ``swarp_wrapper``, see [Contributing to the swarp_wrapper](CONTRIBUTING.md)
